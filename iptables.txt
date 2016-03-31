@@ -1,0 +1,2 @@
+/sbin/iptables -t mangle -A PREROUTING -d 10.0.0.0/8 -j GTPU --own-ip 0.0.0.0 --own-tun 100 --peer-ip 0.0.0.0 --peer-tun 101 --action add
+/sbin/iptables -t mangle -A PREROUTING -s 165.1.35.57 -p udp --dport 2152 -j GTPU --action remove
