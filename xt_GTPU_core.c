@@ -32,7 +32,8 @@ MODULE_AUTHOR("Pradip Biswas <pradip_biswas@polarisnetworks.net>");
 MODULE_DESCRIPTION("GTPu Data Path extension on netfilter");
 
 /*test compile opt	*/
-//#define LH_DO_GETTIMEOFDAY
+//#define LH_DO_GETTIMEOFDAY
+
 //#define LH_TEST_CASE_HASHTAB
 //#define LH_TEST_DEBUG_PRINT
 //#define LH_TEST_GETTEID
@@ -194,8 +195,7 @@ xt_gtpu_stats_insertfailnum(struct xt_gtpu_t *xt_gtpu)
 {
 	struct xt_gtpu_error_info_stats *errinfo;
 
-	errinfo = &(xt_gtpu->
-tot_stats.errinfo);
+	errinfo = &(xt_gtpu->tot_stats.errinfo);
 	atomic_inc(&(errinfo->insert_fail_cnt));
 }
 
@@ -213,8 +213,7 @@ xt_gtpu_stats_modifyfailnum(struct xt_gtpu_t *xt_gtpu)
 {
 	struct xt_gtpu_error_info_stats *errinfo;
 
-	errinfo = &(xt_gtpu->
-tot_stats.errinfo);
+	errinfo = &(xt_gtpu->tot_stats.errinfo);
 	atomic_inc(&(errinfo->modify_fail_cnt));
 }
 
@@ -232,8 +231,7 @@ xt_gtpu_stats_deletefailnum(struct xt_gtpu_t *xt_gtpu)
 {
 	struct xt_gtpu_error_info_stats *errinfo;
 
-	errinfo = &(xt_gtpu->
-tot_stats.errinfo);
+	errinfo = &(xt_gtpu->tot_stats.errinfo);
 	atomic_inc(&(errinfo->delete_fail_cnt));
 }
 
@@ -390,6 +388,7 @@ xt_gtpu_get_GTPUteid(const struct sk_buff *skb)
 netlink sock receive/send/handle-msg
 
 used for control the xt_GTPU and insert/modify/delete xt_GTPU_tab
+or reset stats
 ************************************************************************
 */
 //insert a user-info to xt_GTPU_tab
@@ -429,6 +428,7 @@ static int xt_gtpu_inter_insert(struct xt_gtpu_tab_down_param *p, struct xt_gtpu
 	return ret;
 }
 
+//modify a user-info to xt_GTPU_tab
 static int xt_gtpu_inter_modify(struct xt_gtpu_tab_down_param *p, struct xt_gtpu_tab_up_param *p_up)
 {
 	struct xt_gtpu_tab_down_t* cp = NULL;
@@ -458,6 +458,7 @@ static int xt_gtpu_inter_modify(struct xt_gtpu_tab_down_param *p, struct xt_gtpu
 	return ret;
 }
 
+//delete a user-info to xt_GTPU_tab
 static int xt_gtpu_inter_delete(struct xt_gtpu_tab_down_param *p, struct xt_gtpu_tab_up_param *p_up)
 {
 	struct xt_gtpu_tab_down_t* cp = NULL;
@@ -481,6 +482,7 @@ static int xt_gtpu_inter_delete(struct xt_gtpu_tab_down_param *p, struct xt_gtpu
 	return ret;
 }
 
+//xt_gtpu_inter_test_search() is for testing insert/modify/delete
 static int xt_gtpu_inter_test_search(struct xt_gtpu_tab_down_param *p, struct xt_gtpu_tab_up_param *p_up)
 {
 	struct xt_gtpu_tab_down_t* cp = NULL;
@@ -511,7 +513,8 @@ static int xt_gtpu_inter_test_search(struct xt_gtpu_tab_down_param *p, struct xt
 	return ret;
 }
 
-static int __gtpu_kernel_receive_reset_errorstats(struct xt_gtpu_t *xt_gtpu)
+//reset error stats
+static int xt_gtpu_inter_reset_errorstats(struct xt_gtpu_t *xt_gtpu)
 {
 	struct xt_gtpu_error_info_stats *errinfo;
 
@@ -526,7 +529,8 @@ static int __gtpu_kernel_receive_reset_errorstats(struct xt_gtpu_t *xt_gtpu)
 	return 0;
 }
 
-static int __gtpu_kernel_receive_reset_cpustats(struct xt_gtpu_t *xt_gtpu, 
+//reset cpu-value stats
+static int xt_gtpu_inter_reset_cpustats(struct xt_gtpu_t *xt_gtpu, 
 															struct xt_gtpu_cpu_stats __percpu *per_cpu_stats)
 {
 	int i;
@@ -550,18 +554,16 @@ static int __gtpu_kernel_receive_reset_cpustats(struct xt_gtpu_t *xt_gtpu,
 	return 0;
 }
 
-/* function is not ready. I don't know how to reset the cpu_var */
-// may I need to refer xt_gtpu_read_cpu_stats fun.
-static int __gtpu_kernel_receive_reset_allstats(struct xt_gtpu_t *xt_gtpu)
+static int xt_gtpu_inter_reset_allstats(struct xt_gtpu_t *xt_gtpu)
 {
 	
-	__gtpu_kernel_receive_reset_errorstats(xt_gtpu);
-	__gtpu_kernel_receive_reset_cpustats(xt_gtpu, (xt_gtpu->tot_stats.cpustats));
+	xt_gtpu_inter_reset_errorstats(xt_gtpu);
+	xt_gtpu_inter_reset_cpustats(xt_gtpu, (xt_gtpu->tot_stats.cpustats));
 	
 	return 0;
 }
 
-static int __gtpu_kernel_receive_get_errorstats(struct xt_gtpu_t *xt_gtpu, struct xt_gtpu_inter_msg_errorinfo_stats *msg)
+static int xt_gtpu_inter_get_errorstats(struct xt_gtpu_t *xt_gtpu, struct xt_gtpu_inter_msg_errorinfo_stats *msg)
 {
 	struct xt_gtpu_error_info_stats *errinfo;
 
@@ -581,7 +583,7 @@ static int __gtpu_kernel_receive_get_errorstats(struct xt_gtpu_t *xt_gtpu, struc
 	return 0;
 }
 
-static int __gtpu_kernel_receive_print_errorstats(struct xt_gtpu_t *xt_gtpu, struct xt_gtpu_inter_msg_errorinfo_stats *msg)
+static int xt_gtpu_inter_print_errorstats(struct xt_gtpu_t *xt_gtpu, struct xt_gtpu_inter_msg_errorinfo_stats *msg)
 {
 	pr_info("gtpu: GTPUerror_pkts = %d\n", msg->GTPUerror_pkts);
 	pr_info("gtpu: GTPUeNB_pkts = %d\n", msg->GTPUeNB_pkts);
@@ -637,20 +639,20 @@ _gtpu_kernel_receive_dec(char *msg)
 			ret = xt_gtpu_inter_test_search(&p, &p_up);
 			break;
 		case kXtGTPUInterResetAllStats:
-			ret = __gtpu_kernel_receive_reset_allstats(&g_xt_GTPU_stats);
+			ret = xt_gtpu_inter_reset_allstats(&g_xt_GTPU_stats);
 			break;
 		case kXtGTPUInterResetErrorStats:
-			ret = __gtpu_kernel_receive_reset_errorstats(&g_xt_GTPU_stats);
+			ret = xt_gtpu_inter_reset_errorstats(&g_xt_GTPU_stats);
 			break;
 		case kXtGTPUInterGetErrorStats:
 			//xt_gtpu_send_statsmsg
-			__gtpu_kernel_receive_get_errorstats(&g_xt_GTPU_stats, &error_info_msg);
+			xt_gtpu_inter_get_errorstats(&g_xt_GTPU_stats, &error_info_msg);
 			ret = xt_gtpu_send_statsmsg((char *)&error_info_msg, sizeof(struct xt_gtpu_inter_msg_errorinfo_stats));
 			break;
 		case kXtGTPUInterPrintErrorStats:
-			__gtpu_kernel_receive_get_errorstats(&g_xt_GTPU_stats, &error_info_msg);
+			xt_gtpu_inter_get_errorstats(&g_xt_GTPU_stats, &error_info_msg);
 			// struct xt_gtpu_inter_msg_stats_all is hard to get , so don't print it info.
-			ret = __gtpu_kernel_receive_print_errorstats(&g_xt_GTPU_stats, &error_info_msg);
+			ret = xt_gtpu_inter_print_errorstats(&g_xt_GTPU_stats, &error_info_msg);
 		default:
 			/* not matched msgtype */
 			ret = -1;
