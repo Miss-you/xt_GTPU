@@ -37,31 +37,39 @@ MODULE_DESCRIPTION("GTPu Data Path extension on netfilter");
 //#define LH_TEST_DEBUG_PRINT
 //#define LH_TEST_GETTEID
 
-struct timeval time_val;
 static struct sock *netlinkfd = NULL;
 
 struct {
 	__u32 pid;
-}user_process;
+}g_user_process;
+
+/* GTPU virtual IP */
+//for LVS
+__be32 g_xt_GTPU_kernel_virtual_IP __read_mostly;
+
+/* GTPU global struct var */
+//for stats
+struct xt_gtpu_t g_xt_GTPU_stats __read_mostly;
 
 static inline struct net *
-skb_net(const struct sk_buff *skb)
+xt_gtpu_skb_net(const struct sk_buff *skb)
 {
 	return &init_net;
 }
 
-/* GTPU virtual IP */
-__be32 xt_GTPu_kernle_virtual_IP __read_mostly;
-
-/* GTPU global struct var */
-struct xt_gtpu_t xt_gtpu_global __read_mostly;
-
-static inline void __set_xt_GTPu_kernle_virtual_IP(unsigned int virtIP)
+static inline void xt_gtpu_inter_set_virtual_IP(unsigned int virtIP)
 {
-	xt_GTPu_kernle_virtual_IP = virtIP;
+	g_xt_GTPU_kernel_virtual_IP = virtIP;
 }
 
-/* xt_gtpu stats */
+/* 
+************************************************************************
+g_xt_GTPU_stats 
+
+GTPU transmit pkts stats
+************************************************************************
+*/
+//upload GTPU pkt stats
 static inline void
 xt_gtpu_up_stats(struct xt_gtpu_t *xt_gtpu, struct sk_buff *skb)
 {
@@ -74,6 +82,7 @@ xt_gtpu_up_stats(struct xt_gtpu_t *xt_gtpu, struct sk_buff *skb)
 	u64_stats_update_end(&stats->syncp);
 }
 
+//download GTPU pkt stats
 static inline void
 xt_gtpu_down_stats(struct xt_gtpu_t *xt_gtpu, struct sk_buff *skb)
 {
@@ -87,6 +96,7 @@ xt_gtpu_down_stats(struct xt_gtpu_t *xt_gtpu, struct sk_buff *skb)
 }
 
 /* xt_gtpu stats all pkts */
+//upload GTPU pkt stats(enclude pkts failed)
 static inline void
 xt_gtpu_up_stats_all(struct xt_gtpu_t *xt_gtpu, struct sk_buff *skb)
 {
@@ -96,6 +106,7 @@ xt_gtpu_up_stats_all(struct xt_gtpu_t *xt_gtpu, struct sk_buff *skb)
 	stats->ustats.alluppkts++;
 }
 
+//download GTPU pkt stats(enclude pkts failed)
 static inline void
 xt_gtpu_down_stats_all(struct xt_gtpu_t *xt_gtpu, struct sk_buff *skb)
 {
@@ -106,6 +117,7 @@ xt_gtpu_down_stats_all(struct xt_gtpu_t *xt_gtpu, struct sk_buff *skb)
 }
 
 /* xt_gtpu stats all pkts */
+//upload GTPU error pkt stats
 static inline void
 xt_gtpu_up_stats_err(struct xt_gtpu_t *xt_gtpu, struct sk_buff *skb)
 {
@@ -115,6 +127,7 @@ xt_gtpu_up_stats_err(struct xt_gtpu_t *xt_gtpu, struct sk_buff *skb)
 	stats->ustats.erruppkts++;
 }
 
+//download GTPU error pkt stats
 static inline void
 xt_gtpu_down_stats_err(struct xt_gtpu_t *xt_gtpu, struct sk_buff *skb)
 {
@@ -124,40 +137,46 @@ xt_gtpu_down_stats_err(struct xt_gtpu_t *xt_gtpu, struct sk_buff *skb)
 	stats->ustats.errdownpkts++;
 }
 
-//#define TODO
-#define XT_GTPU_INSERTCNT(ret) \
+/* 
+************************************************************************
+g_xt_GTPU_stats 
+
+up/down transmit-table insert/modify/delete stats
+************************************************************************
+*/
+#define XT_GTPU_INTER_INSERTCNT(ret) \
 	do{\
 		if (likely(ret == 0))\
 		{\
-			xt_gtpu_stats_insertsuccessnum(&xt_gtpu_global);\
+			xt_gtpu_stats_insertsuccessnum(&g_xt_GTPU_stats);\
 		}\
 		else\
 		{\
-			xt_gtpu_stats_insertfailnum(&xt_gtpu_global);\
+			xt_gtpu_stats_insertfailnum(&g_xt_GTPU_stats);\
 		}\
 	}while(0)
 
-#define XT_GTPU_MODIFYCNT(ret) \
+#define XT_GTPU_INTER_MODIFYCNT(ret) \
 	do{\
 		if (likely(ret == 0))\
 		{\
-			xt_gtpu_stats_modifysuccessnum(&xt_gtpu_global);\
+			xt_gtpu_stats_modifysuccessnum(&g_xt_GTPU_stats);\
 		}\
 		else\
 		{\
-			xt_gtpu_stats_modifyfailnum(&xt_gtpu_global);\
+			xt_gtpu_stats_modifyfailnum(&g_xt_GTPU_stats);\
 		}\
 	}while(0)
 
-#define XT_GTPU_DELETECNT(ret) \
+#define XT_GTPU_INTER_DELETECNT(ret) \
 	do{\
 		if (likely(ret == 0))\
 		{\
-			xt_gtpu_stats_deletesuccessnum(&xt_gtpu_global);\
+			xt_gtpu_stats_deletesuccessnum(&g_xt_GTPU_stats);\
 		}\
 		else\
 		{\
-			xt_gtpu_stats_deletefailnum(&xt_gtpu_global);\
+			xt_gtpu_stats_deletefailnum(&g_xt_GTPU_stats);\
 		}\
 	}while(0)
 
@@ -218,10 +237,18 @@ tot_stats.errinfo);
 	atomic_inc(&(errinfo->delete_fail_cnt));
 }
 
-#define TEIDTYPE_OFFSET 28
+/* 
+************************************************************************
+get GTPU pkts TEID or GTPU-type
+
+xt_gtpu_get_GTPUtype
+xt_gtpu_get_GTPUteid
+************************************************************************
+*/
+#define TEID_TYPE_OFFSET 28
 #define GTPU_PKT_TPU_TYPE 0xff
 #define GTPU_PKT_ERRINDICATION_TYPE 0x1a
-static int xt_gtpu_get_GTPUtype_offset = TEIDTYPE_OFFSET - sizeof(struct iphdr) - sizeof(struct udphdr);
+static const int xt_gtpu_get_GTPUtype_offset = TEID_TYPE_OFFSET - sizeof(struct iphdr) - sizeof(struct udphdr);
 
 /* 0 is T-PDU, GTPU data
 *  1 is Error Indication
@@ -235,12 +262,13 @@ xt_gtpu_get_GTPUtype(const struct sk_buff *skb)
 	/* 1st condition, teid is in skb_buff */
 	if (!skb_is_nonlinear(skb))
 	{
-		GTPUtype = *(uint8_t *)(skb->data + TEIDTYPE_OFFSET + 1);
-		pr_info("%x %x %x %x\n", *(uint8_t *)(skb->data + TEIDTYPE_OFFSET), \
-			*(uint8_t *)(skb->data + TEIDTYPE_OFFSET + 1),\
-			*(uint8_t *)(skb->data + TEIDTYPE_OFFSET + 2),\
-			*(uint8_t *)(skb->data + TEIDTYPE_OFFSET + 3));
-		
+		GTPUtype = *(uint8_t *)(skb->data + TEID_TYPE_OFFSET + 1);
+		/*
+		pr_info("%x %x %x %x\n", *(uint8_t *)(skb->data + TEID_TYPE_OFFSET), \
+			*(uint8_t *)(skb->data + TEID_TYPE_OFFSET + 1),\
+			*(uint8_t *)(skb->data + TEID_TYPE_OFFSET + 2),\
+			*(uint8_t *)(skb->data + TEID_TYPE_OFFSET + 3));
+		*/
 		goto GTPUtypeJudge;
 	}
 	else
@@ -250,21 +278,12 @@ xt_gtpu_get_GTPUtype(const struct sk_buff *skb)
 		int i = 0;
 		skb_frag_t *frag;
 		int offset;
-		
-#ifdef LH_TEST_GETTEID
-		pr_info("skb is nonlinear\n");
-		//sk_buff->data_len
-		pr_info("skb data_len is %d\n", skb->data_len);	
-		pr_info("skb len is %d\n", skb->len);
-		pr_info("skb truesize is %d\n", skb->truesize);
-		pr_info("linear teid is %x\n", *(unsigned int *)(skb->data + TEIDTYPE_OFFSET));
-#endif
 
 		/* 2nd condition, teid is still in skb_buff */
 		skb_head_len = skb->len - skb->data_len;
-		if (unlikely(skb_head_len >= (TEIDTYPE_OFFSET+4)))
+		if (unlikely(skb_head_len >= (TEID_TYPE_OFFSET+4)))
 		{
-			GTPUtype = *(uint8_t *)(skb->data + TEIDTYPE_OFFSET + 1);
+			GTPUtype = *(uint8_t *)(skb->data + TEID_TYPE_OFFSET + 1);
 			goto GTPUtypeJudge;
 		}
 		
@@ -284,23 +303,16 @@ xt_gtpu_get_GTPUtype(const struct sk_buff *skb)
 		vaddr = (char *)kmap(page);
 		GTPUtype = *(uint8_t *)(vaddr + frag->page_offset + offset + 1);
 		
-#ifdef LH_TEST_GETTEID
-		list = skb_shinfo(skb)->frag_list;
-		if (list != NULL)
-		{
-			pr_info("list is not NULL, list size is %d\n", list->truesize);
-		}
-#endif
 GTPUtypeJudge:
 		return GTPUtype;
 	}
 }
 
-#define TEID_OFFSET 32
-static int xt_gtpu_gett_teid_offset = TEID_OFFSET - sizeof(struct iphdr) - sizeof(struct udphdr);
+#define TEID_VALUE_OFFSET 32
+static const int xt_gtpu_gett_teid_offset = TEID_VALUE_OFFSET - sizeof(struct iphdr) - sizeof(struct udphdr);
 
 static unsigned int 
-xt_gtpu_getteid(const struct sk_buff *skb)
+xt_gtpu_get_GTPUteid(const struct sk_buff *skb)
 {
 #ifdef LH_TEST_GETTEID
 	int test_offset;
@@ -318,7 +330,7 @@ xt_gtpu_getteid(const struct sk_buff *skb)
 		pr_info("skb is linear\n");
 #endif
 
-		teid = *(unsigned int *)(skb->data + TEID_OFFSET);
+		teid = *(unsigned int *)(skb->data + TEID_VALUE_OFFSET);
 		return teid;
 	}
 	else
@@ -335,14 +347,14 @@ xt_gtpu_getteid(const struct sk_buff *skb)
 		pr_info("skb data_len is %d\n", skb->data_len);
 		pr_info("skb len is %d\n", skb->len);
 		pr_info("skb truesize is %d\n", skb->truesize);
-		pr_info("linear teid is %x\n", *(unsigned int *)(skb->data + TEID_OFFSET));
+		pr_info("linear teid is %x\n", *(unsigned int *)(skb->data + TEID_VALUE_OFFSET));
 #endif
 
 		/* 2nd condition, teid is still in skb_buff */
 		skb_head_len = skb->len - skb->data_len;
-		if (unlikely(skb_head_len >= (TEID_OFFSET+4)))
+		if (unlikely(skb_head_len >= (TEID_VALUE_OFFSET+4)))
 		{
-			teid = *(unsigned int *)(skb->data + TEID_OFFSET);
+			teid = *(unsigned int *)(skb->data + TEID_VALUE_OFFSET);
 			return teid;
 		}
 		
@@ -373,7 +385,15 @@ xt_gtpu_getteid(const struct sk_buff *skb)
 	}
 }
 
-static int __gtpu_kernel_receive_insert(struct xt_gtpu_tab_down_param *p, struct xt_gtpu_tab_up_param *p_up)
+/* 
+************************************************************************
+netlink sock receive/send/handle-msg
+
+used for control the xt_GTPU and insert/modify/delete xt_GTPU_tab
+************************************************************************
+*/
+//insert a user-info to xt_GTPU_tab
+static int xt_gtpu_inter_insert(struct xt_gtpu_tab_down_param *p, struct xt_gtpu_tab_up_param *p_up)
 {
 	struct xt_gtpu_tab_down_t* cp = NULL;
 	struct xt_gtpu_tab_up_t* cp_up = NULL;
@@ -405,11 +425,11 @@ static int __gtpu_kernel_receive_insert(struct xt_gtpu_tab_down_param *p, struct
 	}
 	ret = 0;
 
-	XT_GTPU_INSERTCNT(ret);
+	XT_GTPU_INTER_INSERTCNT(ret);
 	return ret;
 }
 
-static int __gtpu_kernel_receive_modify(struct xt_gtpu_tab_down_param *p, struct xt_gtpu_tab_up_param *p_up)
+static int xt_gtpu_inter_modify(struct xt_gtpu_tab_down_param *p, struct xt_gtpu_tab_up_param *p_up)
 {
 	struct xt_gtpu_tab_down_t* cp = NULL;
 	struct xt_gtpu_tab_up_t* cp_up = NULL;
@@ -434,11 +454,11 @@ static int __gtpu_kernel_receive_modify(struct xt_gtpu_tab_down_param *p, struct
 	}			
 	ret = 0;
 
-	XT_GTPU_MODIFYCNT(ret);
+	XT_GTPU_INTER_MODIFYCNT(ret);
 	return ret;
 }
 
-static int __gtpu_kernel_receive_delete(struct xt_gtpu_tab_down_param *p, struct xt_gtpu_tab_up_param *p_up)
+static int xt_gtpu_inter_delete(struct xt_gtpu_tab_down_param *p, struct xt_gtpu_tab_up_param *p_up)
 {
 	struct xt_gtpu_tab_down_t* cp = NULL;
 	struct xt_gtpu_tab_up_t* cp_up = NULL;
@@ -457,11 +477,11 @@ static int __gtpu_kernel_receive_delete(struct xt_gtpu_tab_down_param *p, struct
 		ret = 0;
 	}
 
-	XT_GTPU_DELETECNT(ret);
+	XT_GTPU_INTER_DELETECNT(ret);
 	return ret;
 }
 
-static int __gtpu_kernel_receive_test_search(struct xt_gtpu_tab_down_param *p, struct xt_gtpu_tab_up_param *p_up)
+static int xt_gtpu_inter_test_search(struct xt_gtpu_tab_down_param *p, struct xt_gtpu_tab_up_param *p_up)
 {
 	struct xt_gtpu_tab_down_t* cp = NULL;
 	struct xt_gtpu_tab_up_t* cp_up = NULL;
@@ -600,37 +620,37 @@ _gtpu_kernel_receive_dec(char *msg)
 	{
 		case kXtGTPUInterInsert:
 			/* rebuild */
-			ret = __gtpu_kernel_receive_insert(&p, &p_up);
+			ret = xt_gtpu_inter_insert(&p, &p_up);
 			break;
 		case kXtGTPUInterModify:
-			ret = __gtpu_kernel_receive_modify(&p, &p_up);
+			ret = xt_gtpu_inter_modify(&p, &p_up);
 			break;
 		case kXtGTPUInterDelete:
-			ret = __gtpu_kernel_receive_delete(&p, &p_up);
+			ret = xt_gtpu_inter_delete(&p, &p_up);
 			break;
 		case kXtGTPUInterSetVirtIP:
 			/* UEip in decmsg is used to transmit the virtual IP */
-			__set_xt_GTPu_kernle_virtual_IP(decmsg->UEip);
+			xt_gtpu_inter_set_virtual_IP(decmsg->UEip);
 			ret = 0;
 			break;
 		case kXtGTPUInterTestSearchInsert:
-			ret = __gtpu_kernel_receive_test_search(&p, &p_up);
+			ret = xt_gtpu_inter_test_search(&p, &p_up);
 			break;
 		case kXtGTPUInterResetAllStats:
-			ret = __gtpu_kernel_receive_reset_allstats(&xt_gtpu_global);
+			ret = __gtpu_kernel_receive_reset_allstats(&g_xt_GTPU_stats);
 			break;
 		case kXtGTPUInterResetErrorStats:
-			ret = __gtpu_kernel_receive_reset_errorstats(&xt_gtpu_global);
+			ret = __gtpu_kernel_receive_reset_errorstats(&g_xt_GTPU_stats);
 			break;
 		case kXtGTPUInterGetErrorStats:
 			//xt_gtpu_send_statsmsg
-			__gtpu_kernel_receive_get_errorstats(&xt_gtpu_global, &error_info_msg);
+			__gtpu_kernel_receive_get_errorstats(&g_xt_GTPU_stats, &error_info_msg);
 			ret = xt_gtpu_send_statsmsg((char *)&error_info_msg, sizeof(struct xt_gtpu_inter_msg_errorinfo_stats));
 			break;
 		case kXtGTPUInterPrintErrorStats:
-			__gtpu_kernel_receive_get_errorstats(&xt_gtpu_global, &error_info_msg);
+			__gtpu_kernel_receive_get_errorstats(&g_xt_GTPU_stats, &error_info_msg);
 			// struct xt_gtpu_inter_msg_stats_all is hard to get , so don't print it info.
-			ret = __gtpu_kernel_receive_print_errorstats(&xt_gtpu_global, &error_info_msg);
+			ret = __gtpu_kernel_receive_print_errorstats(&g_xt_GTPU_stats, &error_info_msg);
 		default:
 			/* not matched msgtype */
 			ret = -1;
@@ -671,7 +691,7 @@ _gtpu_send_to_user(char *info, int datalen) //发送到用户空间
 
 	memcpy(NLMSG_DATA(nlh), info, datalen);
 	//发送数据
-	retval = netlink_unicast(netlinkfd, skb, user_process.pid, MSG_DONTWAIT);
+	retval = netlink_unicast(netlinkfd, skb, g_user_process.pid, MSG_DONTWAIT);
 
 	return 0;
 }
@@ -784,8 +804,8 @@ _gtpu_kernel_receive(struct sk_buff *__skb)
 		if((nlh->nlmsg_len >= sizeof(struct nlmsghdr))
 		&& (__skb->len >= nlh->nlmsg_len))
 		{
-			user_process.pid = nlh->nlmsg_pid;
-			//NLMSG_DATA(nlh)
+			g_user_process.pid = nlh->nlmsg_pid;
+			//get data ptr
 			data = (char *)NLMSG_DATA(nlh);
 
 			ret = _gtpu_kernel_receive_dec(data);
@@ -918,7 +938,7 @@ _gtpu_target_add(struct sk_buff *skb, const struct xt_gtpu_target_info *tgi)
 	int ret = 0;
 
 	/* stats all the pkts */
-	xt_gtpu_down_stats_all(&xt_gtpu_global, skb);
+	xt_gtpu_down_stats_all(&g_xt_GTPU_stats, skb);
 	///* to do, tgi need to be replaced */
 
     /* Keep the length of the source IP packet */
@@ -959,7 +979,7 @@ _gtpu_target_add(struct sk_buff *skb, const struct xt_gtpu_target_info *tgi)
     udph->dest = (cp->enodeBport);
     udph->len = htons(udp_len);
     udph->check = 0;
-    udph->check = csum_tcpudp_magic(xt_GTPu_kernle_virtual_IP, cp->enodeBip, udp_len, IPPROTO_UDP, csum_partial((char*)udph, udp_len, 0));
+    udph->check = csum_tcpudp_magic(g_xt_GTPU_kernel_virtual_IP, cp->enodeBip, udp_len, IPPROTO_UDP, csum_partial((char*)udph, udp_len, 0));
     skb_set_transport_header(new_skb, 0);
 
     /* Add IP header */
@@ -974,7 +994,7 @@ _gtpu_target_add(struct sk_buff *skb, const struct xt_gtpu_target_info *tgi)
     gtpu_iph->ttl      = 64;
     gtpu_iph->protocol = IPPROTO_UDP;
     gtpu_iph->check    = 0;
-    gtpu_iph->saddr    = (xt_GTPu_kernle_virtual_IP);//self ip?
+    gtpu_iph->saddr    = (g_xt_GTPU_kernel_virtual_IP);//self ip?
     gtpu_iph->daddr    = (cp->enodeBip);
     gtpu_iph->check    = ip_fast_csum((unsigned char *)gtpu_iph, gtpu_iph->ihl);
     skb_set_network_header(new_skb, 0);
@@ -985,12 +1005,12 @@ _gtpu_target_add(struct sk_buff *skb, const struct xt_gtpu_target_info *tgi)
     if (likely(ret == GTPU_SUCCESS))
     {
         /* Succeeded. Drop the original packet */
-		xt_gtpu_down_stats(&xt_gtpu_global, new_skb);
+		xt_gtpu_down_stats(&g_xt_GTPU_stats, new_skb);
         return NF_DROP;
     }
     else
     {
-    	xt_gtpu_down_stats_err(&xt_gtpu_global, skb);
+    	xt_gtpu_down_stats_err(&g_xt_GTPU_stats, skb);
     //    kfree_skb(new_skb);//should not here, for dst_out had already free the skb
         return NF_DROP; /* What should we do here ??? ACCEPT seems to be the best option */
     }
@@ -1026,7 +1046,7 @@ _gtpu_target_rem(struct sk_buff *orig_skb, const struct xt_gtpu_target_info *tgi
 	struct iphdr *iph_new = NULL;
     struct gtpuhdr *gtpuh = NULL;
     struct sk_buff *skb = NULL;
-	struct net * net = skb_net(orig_skb);
+	struct net * net = xt_gtpu_skb_net(orig_skb);
 	unsigned int GWteid;
 	struct xt_gtpu_tab_up_param p;
 	struct xt_gtpu_tab_up_t *cp;
@@ -1034,7 +1054,7 @@ _gtpu_target_rem(struct sk_buff *orig_skb, const struct xt_gtpu_target_info *tgi
 	uint8_t gtpu_pkt_type;
 	
 	/* stats all the pkts */
-	xt_gtpu_up_stats_all(&xt_gtpu_global, skb);
+	xt_gtpu_up_stats_all(&g_xt_GTPU_stats, skb);
 	
     /* Create a new copy of the original skb...can't avoid :-( */
     skb = skb_copy(orig_skb, GFP_ATOMIC);
@@ -1052,7 +1072,7 @@ _gtpu_target_rem(struct sk_buff *orig_skb, const struct xt_gtpu_target_info *tgi
 	}
 	
 	/* judge the packet is the GTPU pkt or validate pkt */
-	GWteid = xt_gtpu_getteid(orig_skb);
+	GWteid = xt_gtpu_get_GTPUteid(orig_skb);
 	xt_gtpu_tab_up_fill_param(0, 0, GWteid, 0, &p);
 	cp = __xt_gtpu_tab_up_in_get(&p);
 	if (unlikely(cp == NULL))
@@ -1090,12 +1110,12 @@ _gtpu_target_rem(struct sk_buff *orig_skb, const struct xt_gtpu_target_info *tgi
     ret = _gtpu_route_packet(net, skb, tgi);
 	if (likely(ret == GTPU_SUCCESS))
 	{
-		xt_gtpu_up_stats(&xt_gtpu_global, skb);
+		xt_gtpu_up_stats(&g_xt_GTPU_stats, skb);
 		return NF_DROP;
 	}
 	else
     {
-    	xt_gtpu_up_stats_err(&xt_gtpu_global, skb);
+    	xt_gtpu_up_stats_err(&g_xt_GTPU_stats, skb);
         return NF_DROP; /* What should we do here ??? ACCEPT seems to be the best option */
     }
 }
@@ -1105,10 +1125,6 @@ xt_gtpu_target(struct sk_buff *skb, const struct xt_action_param *par)
 {
     const struct xt_gtpu_target_info *tgi = par->targinfo;
     int result = NF_ACCEPT;
-	
-#ifdef LH_DO_GETTIMEOFDAY
-	do_gettimeofday(&time_val);
-#endif
 
     if (unlikely(tgi == NULL))
     {
@@ -1164,12 +1180,10 @@ static int __init xt_gtpu_init(void)
 	
     pr_info("GTPU: Initializing module (KVersion: %d)\n", 1);
     pr_info("GTPU: Copyright Polaris Networks 2015-2016\n");
-	pr_info("GTPU: version 0.9.5.0\n");
+	pr_info("GTPU: version 0.9.5.1\n");
 
 	/* must be set then this ip can be used */
-	//todo 
-	//auto get its IP
-	xt_GTPu_kernle_virtual_IP = 0;
+	g_xt_GTPU_kernel_virtual_IP = 0;
 	
 	ret = xt_gtpu_tab_down_init();
 	if (ret < 0) {
@@ -1198,7 +1212,7 @@ static int __init xt_gtpu_init(void)
 		goto cleanup_gtpu_target;
 	}
 
-	ret = xt_gtpu_estimator_init(&xt_gtpu_global);
+	ret = xt_gtpu_estimator_init(&g_xt_GTPU_stats);
 	if (ret < 0)
 	{
 		pr_err("can't init the xt_gtpu estimator and timer.!\n");
@@ -1221,7 +1235,7 @@ cleanup_protocol:
 
 static void __exit xt_gtpu_exit(void)
 {
-	xt_gtpu_estimator_cleanup(&xt_gtpu_global);
+	xt_gtpu_estimator_cleanup(&g_xt_GTPU_stats);
 	
     xt_unregister_target(&xt_gtpu_reg);
     pr_info("GTPU: Unloading module\n");
