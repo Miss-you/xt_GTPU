@@ -600,7 +600,7 @@ static int xt_gtpu_inter_print_errorstats(struct xt_gtpu_t *xt_gtpu, struct xt_g
 
 /* decode the message */
 static int 
-_gtpu_kernel_receive_dec(char *msg)
+xt_gtpu_inter_recv_dec(char *msg)
 {
 	struct xt_gtpu_inter_msg *decmsg = NULL;
 	struct xt_gtpu_tab_down_param p;
@@ -621,7 +621,6 @@ _gtpu_kernel_receive_dec(char *msg)
 	switch(decmsg->msgtype)
 	{
 		case kXtGTPUInterInsert:
-			/* rebuild */
 			ret = xt_gtpu_inter_insert(&p, &p_up);
 			break;
 		case kXtGTPUInterModify:
@@ -656,23 +655,19 @@ _gtpu_kernel_receive_dec(char *msg)
 		default:
 			/* not matched msgtype */
 			ret = -1;
-			goto _gtpu_kernel_receive_dec_return;
 			break;
 	}
 
-_gtpu_kernel_receive_dec_return:
 	return ret;
 }
 
 static int 
-_gtpu_send_to_user(char *info, int datalen) //发送到用户空间
+xt_gtpu_inter_send(char *info, int datalen) //发送到用户空间
 {
-	int size;
-	struct sk_buff *skb;
-	unsigned int old_tail;
-	struct nlmsghdr *nlh; //报文头
-
-	int retval;
+	int size, retval;
+    unsigned int old_tail;
+	struct sk_buff *skb = NULL;
+	struct nlmsghdr *nlh = NULL; //报文头
 
 	size = NLMSG_SPACE(datalen+20); //报文大小
 	skb = alloc_skb(size, GFP_KERNEL); //分配一个新的套接字缓存,使用GFP_ATOMIC标志进程不>会被置为睡眠
@@ -684,7 +679,7 @@ _gtpu_send_to_user(char *info, int datalen) //发送到用户空间
 	nlh = nlmsg_put(skb, 0, 0, 0, size, 0); 
 	old_tail = skb->tail;
 	
-	//if the code below was deleted, the kernel will curshed. dont know why
+	//if the code below was deleted, the kernel will curshed. dont know why....
 	nlh->nlmsg_len = (skb->tail - old_tail); //设置消息长度
 	
 	//设置控制字段
@@ -692,7 +687,7 @@ _gtpu_send_to_user(char *info, int datalen) //发送到用户空间
 	NETLINK_CB(skb).dst_group = 0;
 
 	memcpy(NLMSG_DATA(nlh), info, datalen);
-	//发送数据
+	//send
 	retval = netlink_unicast(netlinkfd, skb, g_user_process.pid, MSG_DONTWAIT);
 
 	return 0;
@@ -766,25 +761,23 @@ _gtpu_kernel_send_dec(int ret, char *msg)
 	{
 		case GTPU_SUCCESS_SEND:
 			xt_gtpu_tab_fill_2user_msg_suc(decmsg, &p);
-			sendret = _gtpu_send_to_user((char *)&p, sizeof(struct xt_gtpu_inter_msg));
+			sendret = xt_gtpu_inter_send((char *)&p, sizeof(struct xt_gtpu_inter_msg));
 			break;
 		case GTPU_FAILURE_SEND:
 			xt_gtpu_tab_fill_2user_msg_fail(decmsg, &p);
-			sendret = _gtpu_send_to_user((char *)&p, sizeof(struct xt_gtpu_inter_msg));
+			sendret = xt_gtpu_inter_send((char *)&p, sizeof(struct xt_gtpu_inter_msg));
 			break;
 			
 		case GTPU_INFO_SEND:
-			sendret = _gtpu_send_to_user((char *)&p, sizeof(struct xt_gtpu_inter_msg));
+			sendret = xt_gtpu_inter_send((char *)&p, sizeof(struct xt_gtpu_inter_msg));
 			pr_err("gtpu: _gtpu_kernel_send_dec receive GTPU_INFO\n");
 			//todo
 			break;
 		default:
 			pr_err("gtpu: _gtpu_kernel_send_dec unknown ret val\n");	
 			sendret = -1;
-			goto _gtpu_kernel_send_dec_return;
 	}
 	
-_gtpu_kernel_send_dec_return:
 	return sendret;
 }
 
@@ -810,7 +803,7 @@ _gtpu_kernel_receive(struct sk_buff *__skb)
 			//get data ptr
 			data = (char *)NLMSG_DATA(nlh);
 
-			ret = _gtpu_kernel_receive_dec(data);
+			ret = xt_gtpu_inter_recv_dec(data);
 #ifdef LH_TEST_CASE_HASHTAB			
 			_gtpu_kernel_send_dec(ret, data);
 			//todo
@@ -1148,12 +1141,12 @@ xt_gtpu_target(struct sk_buff *skb, const struct xt_action_param *par)
     return result;
 }
 
-//_gtpu_send_to_user
+//xt_gtpu_inter_send
 //send stats msg
 unsigned int 
 xt_gtpu_send_statsmsg(char *statsMsg, unsigned int msg_len)
 {
-	_gtpu_send_to_user(statsMsg, msg_len);
+	xt_gtpu_inter_send(statsMsg, msg_len);
 
 	return 0;
 }
