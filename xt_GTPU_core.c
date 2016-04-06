@@ -693,8 +693,9 @@ xt_gtpu_inter_send(char *info, int datalen) //发送到用户空间
 	return 0;
 }
 
+/* not used now */
 static void
-xt_gtpu_tab_fill_2user_msg_suc(struct xt_gtpu_inter_msg * decmsg, struct xt_gtpu_inter_msg *sendmsg)
+xt_gtpu_test_inter_msg_suc(struct xt_gtpu_inter_msg * decmsg, struct xt_gtpu_inter_msg *sendmsg)
 {
 	sendmsg->UEip = decmsg->UEip;
 	sendmsg->enodeBip = decmsg->enodeBip;
@@ -721,8 +722,9 @@ xt_gtpu_tab_fill_2user_msg_suc(struct xt_gtpu_inter_msg * decmsg, struct xt_gtpu
 	}
 }
 
+/* not used now */
 static void
-xt_gtpu_tab_fill_2user_msg_fail(struct xt_gtpu_inter_msg * decmsg, struct xt_gtpu_inter_msg *sendmsg)
+xt_gtpu_test_inter_msg_fail(struct xt_gtpu_inter_msg * decmsg, struct xt_gtpu_inter_msg *sendmsg)
 {
 	sendmsg->UEip = decmsg->UEip;
 	sendmsg->enodeBip = decmsg->enodeBip;
@@ -751,7 +753,7 @@ xt_gtpu_tab_fill_2user_msg_fail(struct xt_gtpu_inter_msg * decmsg, struct xt_gtp
 
 /* not used now */
 static int 
-_gtpu_kernel_send_dec(int ret, char *msg)
+xt_gtpu_inter_send_preparation(int ret, char *msg)
 {
 	int sendret;
 	struct xt_gtpu_inter_msg p;
@@ -760,21 +762,21 @@ _gtpu_kernel_send_dec(int ret, char *msg)
 	switch (ret)
 	{
 		case GTPU_SUCCESS_SEND:
-			xt_gtpu_tab_fill_2user_msg_suc(decmsg, &p);
+			xt_gtpu_test_inter_msg_suc(decmsg, &p);
 			sendret = xt_gtpu_inter_send((char *)&p, sizeof(struct xt_gtpu_inter_msg));
 			break;
 		case GTPU_FAILURE_SEND:
-			xt_gtpu_tab_fill_2user_msg_fail(decmsg, &p);
+			xt_gtpu_test_inter_msg_fail(decmsg, &p);
 			sendret = xt_gtpu_inter_send((char *)&p, sizeof(struct xt_gtpu_inter_msg));
 			break;
 			
 		case GTPU_INFO_SEND:
 			sendret = xt_gtpu_inter_send((char *)&p, sizeof(struct xt_gtpu_inter_msg));
-			pr_err("gtpu: _gtpu_kernel_send_dec receive GTPU_INFO\n");
+			pr_err("gtpu: xt_gtpu_inter_send_preparation receive GTPU_INFO\n");
 			//todo
 			break;
 		default:
-			pr_err("gtpu: _gtpu_kernel_send_dec unknown ret val\n");	
+			pr_err("gtpu: xt_gtpu_inter_send_preparation unknown ret val\n");	
 			sendret = -1;
 	}
 	
@@ -785,15 +787,14 @@ _gtpu_kernel_send_dec(int ret, char *msg)
 	receive msg from user space
 */
 static void 
-_gtpu_kernel_receive(struct sk_buff *__skb) 
+xt_gtpu_kernel_recv(struct sk_buff *__skb) 
 {
+    int ret;
+    char *data;
 	struct sk_buff *skb;
 	struct nlmsghdr *nlh = NULL;
-	int ret;
-	char *data;
 	
 	skb = skb_get(__skb);
-
 	if(skb->len >= sizeof(struct nlmsghdr)){
 		nlh = (struct nlmsghdr *)skb->data;
 		if((nlh->nlmsg_len >= sizeof(struct nlmsghdr))
@@ -805,7 +806,7 @@ _gtpu_kernel_receive(struct sk_buff *__skb)
 
 			ret = xt_gtpu_inter_recv_dec(data);
 #ifdef LH_TEST_CASE_HASHTAB			
-			_gtpu_kernel_send_dec(ret, data);
+			xt_gtpu_inter_send_preparation(ret, data);
 			//todo
 #endif
 		}
@@ -822,7 +823,7 @@ _gtpu_kernel_receive(struct sk_buff *__skb)
 #if 0
 //todo 
 static int 
-_gtpu_target_down_notFound(unsigned int UEip)
+xt_gtpu_downlink_pkt_notfound(unsigned int UEip)
 {
 	struct xt_gtpu_inter_msg p;
 	int ret;
@@ -830,17 +831,17 @@ _gtpu_target_down_notFound(unsigned int UEip)
 	p.msgtype = kXtGTPUDownPacketNotFound;
 	p.UEip = UEip;
 
-	ret = _gtpu_kernel_send_dec(GTPU_INFO_SEND, (char *)&p);
+	ret = xt_gtpu_inter_send_preparation(GTPU_INFO_SEND, (char *)&p);
 	if (ret == -1)
 	{
-		pr_err("gtpu: _gtpu_target_notFound _gtpu_kernel_send_dec failed\n");
+		pr_err("gtpu: _gtpu_target_notFound xt_gtpu_inter_send_preparation failed\n");
 	}
 
 	return ret;
 }
 
 static int 
-_gtpu_target_up_notFound(unsigned int GWteid)
+xt_gtpu_uplink_pkt_notfound(unsigned int GWteid)
 {
 	int ret = 0;
 
@@ -849,7 +850,7 @@ _gtpu_target_up_notFound(unsigned int GWteid)
 #endif
 
 static int 
-_gtpu_route_packet(struct net *net, struct sk_buff *skb, const struct xt_gtpu_target_info *info) 
+xt_gtpu_xmit_pkt(struct net *net, struct sk_buff *skb, const struct xt_gtpu_target_info *info) 
 {
     int err = -1;
 	int err_eval = - 1;
@@ -919,7 +920,7 @@ _gtpu_route_packet(struct net *net, struct sk_buff *skb, const struct xt_gtpu_ta
 }
 
 static unsigned int
-_gtpu_target_add(struct sk_buff *skb, const struct xt_gtpu_target_info *tgi)
+xt_gtpu_downlink_pkt(struct sk_buff *skb, const struct xt_gtpu_target_info *tgi)
 {
     struct iphdr *iph = ip_hdr(skb);
 	struct iphdr *gtpu_iph = NULL;
@@ -946,7 +947,7 @@ _gtpu_target_add(struct sk_buff *skb, const struct xt_gtpu_target_info *tgi)
 	{
 		pr_info("gtpu: unknown UEip, packet need to packet. UEip is %x\n", iph->daddr);
 		/* need to save the packet. */
-	//	ret = _gtpu_target_down_notFound(iph->daddr);
+	//	ret = xt_gtpu_downlink_pkt_notfound(iph->daddr);
 		if (ret == 0)
 			return NF_DROP;
 		else
@@ -995,7 +996,7 @@ _gtpu_target_add(struct sk_buff *skb, const struct xt_gtpu_target_info *tgi)
     skb_set_network_header(new_skb, 0);
 
     /* Route the packet */
-	ret = _gtpu_route_packet(&init_net, new_skb, tgi);
+	ret = xt_gtpu_xmit_pkt(&init_net, new_skb, tgi);
 
     if (likely(ret == GTPU_SUCCESS))
     {
@@ -1035,7 +1036,7 @@ xt_gtpu_judge_GTPUtype(uint8_t pkt_type)
 //xt_gtpu_up_stats_all
 //xt_gtpu_up_stats_err
 static unsigned int
-_gtpu_target_rem(struct sk_buff *orig_skb, const struct xt_gtpu_target_info *tgi)
+xt_gtpu_uplink_pkt(struct sk_buff *orig_skb, const struct xt_gtpu_target_info *tgi)
 {	
     struct iphdr *iph = ip_hdr(orig_skb);
 	struct iphdr *iph_new = NULL;
@@ -1102,7 +1103,7 @@ _gtpu_target_rem(struct sk_buff *orig_skb, const struct xt_gtpu_target_info *tgi
 	iph_new->check = ip_fast_csum((unsigned char *)iph_new, iph_new->ihl);
 	
     /* Route the packet */
-    ret = _gtpu_route_packet(net, skb, tgi);
+    ret = xt_gtpu_xmit_pkt(net, skb, tgi);
 	if (likely(ret == GTPU_SUCCESS))
 	{
 		xt_gtpu_up_stats(&g_xt_GTPU_stats, skb);
@@ -1128,11 +1129,11 @@ xt_gtpu_target(struct sk_buff *skb, const struct xt_action_param *par)
 
     if (tgi->action == PARAM_GTPU_ACTION_ADD)
     {
-        result = _gtpu_target_add(skb, tgi);
+        result = xt_gtpu_downlink_pkt(skb, tgi);
     }
     else if (tgi->action == PARAM_GTPU_ACTION_REM)
     {
-        result = _gtpu_target_rem(skb, tgi);
+        result = xt_gtpu_uplink_pkt(skb, tgi);
     }
     else if (tgi->action == PARAM_GTPU_ACTION_TRANSPORT)
     {
@@ -1170,7 +1171,7 @@ static int __init xt_gtpu_init(void)
 {
 	int ret;
 	struct netlink_kernel_cfg cfg = {
-		.input = _gtpu_kernel_receive,
+		.input = xt_gtpu_kernel_recv,
 	};
 	
     pr_info("GTPU: Initializing module (KVersion: %d)\n", 1);
